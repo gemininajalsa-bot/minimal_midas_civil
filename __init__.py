@@ -4,7 +4,7 @@ _version_ = "1.7.1"
 
 
 print('\n╭────────────────────────────────────────────────────────────────────────────────────╮')
-print('│                      MIDAS CIVIL-NX PYTHON LIBRARY v{_version_}  🐍                      │')
+print(f'│                      MIDAS CIVIL-NX PYTHON LIBRARY v{_version_}  🐍                      │')
 print('╰────────────────────────────────────────────────────────────────────────────────────╯\n')
 
 if NX.version_check:

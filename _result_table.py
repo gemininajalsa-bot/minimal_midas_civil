@@ -26,115 +26,118 @@ _bucklingOutputType = Literal["BucklingVector","Buckling_Analysis"]
 _EIGEN_SUBTABLE_MAP = {"Eigenvalue_Analysis":"EIGENVALUEANALYSIS","Modal_Participation_Percent":"MODALPARTICIPATIONMASSESPRINTOUT(1)","Modal_Participation_Mass":"MODALPARTICIPATIONMASSESPRINTOUT(2)","Modal_Participation_Factor":"MODALPARTICIPATIONFACTORPRINTOUT","Modal_Direction_Factor":"MODALDIRECTIONFACTORPRINTOUT","Buckling_Analysis":"BUCKLINGANALYSIS"}
 
 def _convertColm2DataType(res_df):
-    import polars as pl
-
-    str_colms = set(res_df.select(pl.selectors.matches("Load|Part|Remark")).columns)
-    int_colms1 = set(res_df.select(pl.selectors.by_name("Index","Elem",require_all=False)).columns)
-    int_colms2 = set(res_df.select(pl.selectors.matches("/Node")).columns)-int_colms1
-    float_colms = set(res_df.select(pl.selectors.matches("Axial|Shear|Torsion|Moment|FX|FY|FZ|MX|MY|MZ|DX|DY|DZ|RX|RY|RZ|Fx|Fy|Fz|Mx|My|Mz|Dx|Dy|Dz|Rx|Ry|Rz|Level|Height|Displacement|Maximum/Average|Elements|Drift|Factor|Frequency|TRAN|ROTN|Period|Tolerance|Sig-|Time/Step|")).columns)-str_colms-int_colms1-int_colms2
+    import pandas as pd
     
-    res_type_df = res_df.with_columns([
-        pl.selectors.by_name(*str_colms,require_all=False).cast(pl.String),
-        pl.selectors.by_name(*int_colms1,require_all=False).cast(pl.Int64),
-        pl.selectors.by_name(*int_colms2,require_all=False).cast(pl.Int64),
-        pl.selectors.by_name(*float_colms,require_all=False).cast(pl.Float32),
-
-    ])
-
+    # Column categorization using string matching
+    str_colms = set([col for col in res_df.columns if any(x in col for x in ["Load", "Part", "Remark"])])
+    int_colms1 = set([col for col in res_df.columns if col in ["Index", "Elem"]])
+    int_colms2 = set([col for col in res_df.columns if "/Node" in col]) - int_colms1
+    
+    float_keywords = ["Axial", "Shear", "Torsion", "Moment", "FX", "FY", "FZ", "MX", "MY", "MZ", 
+                      "DX", "DY", "DZ", "RX", "RY", "RZ", "Fx", "Fy", "Fz", "Mx", "My", "Mz", 
+                      "Dx", "Dy", "Dz", "Rx", "Ry", "Rz", "Level", "Height", "Displacement", 
+                      "Maximum", "Average", "Elements", "Drift", "Factor", "Frequency", "TRAN", 
+                      "ROTN", "Period", "Tolerance", "Sig-", "Time", "Step"]
+    float_colms = set([col for col in res_df.columns 
+                       if any(x in col for x in float_keywords)]) - str_colms - int_colms1 - int_colms2
+    
+    # Type conversions
+    res_type_df = res_df.copy()
+    
+    if str_colms:
+        res_type_df[list(str_colms)] = res_type_df[list(str_colms)].astype(str)
+    
+    if int_colms1:
+        res_type_df[list(int_colms1)] = res_type_df[list(int_colms1)].astype('int64')
+    
+    if int_colms2:
+        res_type_df[list(int_colms2)] = res_type_df[list(int_colms2)].astype('int64')
+    
+    if float_colms:
+        res_type_df[list(float_colms)] = res_type_df[list(float_colms)].astype('float32')
+    
+    # Handle "Node" column - convert if numeric, keep if alphanumeric
     if "Node" in res_type_df.columns:
-        res_type_df = res_type_df.with_columns(
-            pl.col("Node")
-            .map_elements(
-                lambda x: int(x) if str(x).isdigit() else str(x),
-                return_dtype=pl.Object,
-                )
-            )
-
-            
+        res_type_df["Node"] = res_type_df["Node"].apply(
+            lambda x: int(x) if str(x).isdigit() else str(x)
+        )
+    
     return res_type_df
 
+
 #---- INPUT: JSON -> OUTPUT : Data FRAME --------- ---------
-def _JSToDF_ResTable(js_json,excelLoc,sheetName,cellLoc="A1",outputFormat='Polars'):
-    # Check for SS_Table existence
-    import polars as pl
+def _JSToDF_ResTable(js_json, excelLoc, sheetName, cellLoc="A1", outputFormat='Pandas'):
+    import pandas as pd
+    
     if "SS_Table" not in js_json:
         if 'message' in js_json:
             print(f'⚠️  Error from API: {js_json["message"]}')
         else:
             print('⚠️  Error: "SS_Table" not found in the response JSON.')
-        return pl.DataFrame() # Return empty DataFrame on error
+        return pd.DataFrame()
         
     res_json = {}
-    c=0
+    c = 0
     
-    # Check for HEAD and DATA existence
     if "HEAD" not in js_json["SS_Table"] or "DATA" not in js_json["SS_Table"]:
         print('⚠️  Error: "HEAD" or "DATA" not found in "SS_Table".')
-        return pl.DataFrame() # Return empty DataFrame
+        return pd.DataFrame()
         
     for heading in js_json["SS_Table"]["HEAD"]:
+        res_json[heading] = []
         for dat in js_json["SS_Table"]["DATA"]:
             try:
                 res_json[heading].append(dat[c])
-            except:
-                res_json[heading]=[]
-                res_json[heading].append(dat[c])
+            except IndexError:
+                pass
+        c += 1
 
-        c+=1
-
-    res_df = pl.DataFrame(res_json) # Final DF
-
+    res_df = pd.DataFrame(res_json)
     res_type_df = _convertColm2DataType(res_df)
 
-    # EXPORTING FILE STARTS HERE................
     if excelLoc:
-        _write_df_to_existing_excel(res_type_df,(excelLoc,sheetName, cellLoc))
+        _write_df_to_existing_excel(res_type_df, (excelLoc, sheetName, cellLoc))
 
-    if outputFormat=='JSON':
-        return res_type_df.to_dict(as_series=False)
-    elif outputFormat=='Polars':
-        return(res_type_df)
+    if outputFormat == 'JSON':
+        return res_type_df.to_dict(orient='list')
     else:
-        return(res_type_df)
+        return res_type_df
+
 
 #---- INPUT: JSON -> OUTPUT : Data FRAME --------- ---------
-def _JSToDF_ResTable_TEXT(table_type, js_json, excelLoc, sheetName, cellLoc="A1",outputFormat='Polars'):
-    # Check for result key existence
-    import polars as pl
+def _JSToDF_ResTable_TEXT(table_type, js_json, excelLoc, sheetName, cellLoc="A1", outputFormat='Pandas'):
+    import pandas as pd
+    
     if table_type not in js_json:
         if 'message' in js_json:
             print(f'⚠️  Error from API: {js_json["message"]}')
         else:
             print(f'⚠️  Error: "{table_type}" not found in the response JSON.')
-        return pl.DataFrame() # Return empty DataFrame on error
+        return pd.DataFrame()
 
     res_json = {}
-    c=0
+    c = 0
 
-    # Check for HEAD and DATA existence
     if "HEAD" not in js_json[table_type] or "DATA" not in js_json[table_type]:
         print(f'⚠️  Error: "HEAD" or "DATA" not found in "{table_type}".')
-        return pl.DataFrame() # Return empty DataFrame
+        return pd.DataFrame()
 
     for heading in js_json[table_type]["HEAD"]:
+        res_json[heading] = []
         for dat in js_json[table_type]["DATA"]:
             try:
                 res_json[heading].append(dat[c])
-            except:
-                res_json[heading]=[]
-                res_json[heading].append(dat[c])
+            except IndexError:
+                pass
+        c += 1
 
-        c+=1
-
-    res_df = pl.DataFrame(res_json) # Final DF
-
+    res_df = pd.DataFrame(res_json)
     res_type_df = _convertColm2DataType(res_df)
 
-    # EXPORTING FILE STARTS HERE................
     if excelLoc:
-        _write_df_to_existing_excel(res_type_df,(excelLoc,sheetName, cellLoc))
+        _write_df_to_existing_excel(res_type_df, (excelLoc, sheetName, cellLoc))
 
-    return(res_type_df)
+    return res_type_df
 
 def _format_mode_name(m):
     ''' Normalizes 1 / '1' / 'Mode 1' / 'Mode1' -> 'Mode1' '''
@@ -149,46 +152,46 @@ def _format_modes(modes):
 
 
 #---- INPUT: JSON (Eigen result with SUB_TABLES) -> OUTPUT : Data FRAME ----
-def _JSToDF_ResTable_Eigen(js_json, output, excelLoc, sheetName, cellLoc="A1",outputFormat='Polars'):
-    import polars as pl
+def _JSToDF_ResTable_Eigen(js_json, output, excelLoc, sheetName, cellLoc="A1", outputFormat='Pandas'):
+    import pandas as pd
 
     if "SS_Table" not in js_json:
         if 'message' in js_json:
             print(f'⚠️  Error from API: {js_json["message"]}')
         else:
             print('⚠️  Error: "SS_Table" not found in the response JSON.')
-        return pl.DataFrame()
+        return pd.DataFrame()
 
     table_json = js_json["SS_Table"]
 
     if output == "EigenVector" or output == "BucklingVector":
         if "HEAD" not in table_json or "DATA" not in table_json:
             print('⚠️  Error: "HEAD" or "DATA" not found in "SS_Table".')
-            return pl.DataFrame()
+            return pd.DataFrame()
 
         res_json = {}
         c = 0
         for heading in table_json["HEAD"]:
+            res_json[heading] = []
             for dat in table_json["DATA"]:
                 try:
                     res_json[heading].append(dat[c])
-                except:
-                    res_json[heading] = []
-                    res_json[heading].append(dat[c])
+                except IndexError:
+                    pass
             c += 1
 
-        res_df = pl.DataFrame(res_json)
+        res_df = pd.DataFrame(res_json)
         res_type_df = _convertColm2DataType(res_df)
 
     else:
         sub_key = _EIGEN_SUBTABLE_MAP.get(output)
         if sub_key is None:
             print(f'⚠️  Error: Unknown output type "{output}".')
-            return pl.DataFrame()
+            return pd.DataFrame()
 
         if "SUB_TABLES" not in table_json:
             print('⚠️  Error: "SUB_TABLES" not found in "SS_Table".')
-            return pl.DataFrame()
+            return pd.DataFrame()
 
         sub_table_data = None
         for sub_tab in table_json["SUB_TABLES"]:
@@ -200,20 +203,21 @@ def _JSToDF_ResTable_Eigen(js_json, output, excelLoc, sheetName, cellLoc="A1",ou
 
         if sub_table_data is None:
             print(f'⚠️  Error: Sub-table for "{output}" not found in response.')
-            return pl.DataFrame()
+            return pd.DataFrame()
 
         if "HEAD" not in sub_table_data or "DATA" not in sub_table_data:
             print(f'⚠️  Error: "HEAD" or "DATA" not found in sub-table for "{output}".')
-            return pl.DataFrame()
+            return pd.DataFrame()
 
         res_json = _Head_Data_2_DF_JSON(sub_table_data["HEAD"], sub_table_data["DATA"])
-        res_df = pl.DataFrame(res_json)
+        res_df = pd.DataFrame(res_json)
         res_type_df = _convertColm2DataType(res_df)
 
     if excelLoc:
         _write_df_to_existing_excel(res_type_df, (excelLoc, sheetName, cellLoc))
 
     return res_type_df
+
 
 
 
@@ -278,11 +282,11 @@ def _Head_Data_2_DF_JSON(head,data):
     return res_json
     
 
-def _JSToDF_UserDefined(tableName,js_json,summary,excelLoc,sheetName,cellLoc="A1",outputFormat='Polars'):
-    import polars as pl
+def _JSToDF_UserDefined(tableName, js_json, summary, excelLoc, sheetName, cellLoc="A1", outputFormat='Pandas'):
+    import pandas as pd
+    
     if 'message' in js_json:
         print(f'⚠️  {tableName} table name does not exist.')
-        Result.TABLE.UserDefinedTables_list()
         return 'Check table name'
     
     if tableName not in js_json:
@@ -292,69 +296,56 @@ def _JSToDF_UserDefined(tableName,js_json,summary,excelLoc,sheetName,cellLoc="A1
     if summary == 0:
         head = js_json[tableName]["HEAD"]
         data = js_json[tableName]["DATA"]
-    elif summary > 0 :
-        try :
-            sub_tab1 = js_json[tableName]["SUB_TABLES"][summary-1]
+    elif summary > 0:
+        try:
+            sub_tab1 = js_json[tableName]["SUB_TABLES"][summary - 1]
             key_name = next(iter(sub_tab1))
             head = sub_tab1[key_name]["HEAD"]
             data = sub_tab1[key_name]["DATA"]
-        except :
+        except:
             print(' ⚠️  No Summary table exist')
             return 'No Summary table exist'
 
-
-    res_json = _Head_Data_2_DF_JSON(head,data)
-    res_df = pl.DataFrame(res_json)
-
+    res_json = _Head_Data_2_DF_JSON(head, data)
+    res_df = pd.DataFrame(res_json)
     res_type_df = _convertColm2DataType(res_df)
 
-    # EXPORTING FILE STARTS HERE................
     if excelLoc:
-        _write_df_to_existing_excel(res_type_df,(excelLoc,sheetName, cellLoc))
+        _write_df_to_existing_excel(res_type_df, (excelLoc, sheetName, cellLoc))
 
-    return(res_type_df)
+    return res_type_df
+
 
     
 def _write_df_to_existing_excel(res_df, existing_excel_input: list):
-    """
-    Writes a Polars DataFrame to an existing Excel file at a specific sheet and cell.
-    Uses openpyxl to modify the existing file.
-    """
     import openpyxl
     from openpyxl.utils import column_index_from_string
-    from openpyxl.styles import Font,PatternFill,Border,Side
-
+    from openpyxl.styles import Font, PatternFill, Border, Side
 
     try:
         excel_path, sheet_name, start_cell = existing_excel_input
         if not all([excel_path, sheet_name, start_cell]):
-             print("⚠️  `existing_excel_input` has empty values. Skipping update.")
-             return
+            print("⚠️  `existing_excel_input` has empty values. Skipping update.")
+            return
 
-        # Load workbook
         try:
             wb = openpyxl.load_workbook(excel_path)
-            # FILE EXISTS -> OVERWRITE
         except:
-            # CREATE A NEW FILE
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = sheet_name
 
-            
-            
-        # Get sheet
         if sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
         else:
             print(f"      ⚠️  Sheet '{sheet_name}' not found in {excel_path}. Creating new sheet.")
             ws = wb.create_sheet(sheet_name)
         
-        # Find start row and column from cell_name (e.g., "A1")
         if start_cell == "end":
             nRow = ws.max_row
-            if nRow == 1 : nRow = -1
-            start_row_str = nRow+2
+            if nRow == 1:
+                nRow = -1
+            start_row_str = nRow + 2
             start_col = ws.min_column
         else:
             start_col_let = ''.join(filter(str.isalpha, start_cell))
@@ -363,13 +354,9 @@ def _write_df_to_existing_excel(res_df, existing_excel_input: list):
             
         start_row = int(start_row_str)
 
-
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(fill_type="solid", fgColor="000000")
-
         thin = Side(style="thin")
-
-
 
         # Write header
         headers = res_df.columns
@@ -379,13 +366,11 @@ def _write_df_to_existing_excel(res_df, existing_excel_input: list):
             cell.fill = header_fill
 
 
-        # Write data rows
-        for r_idx, row_data in enumerate(res_df.rows()):
+        for r_idx, row_data in enumerate(res_df.itertuples(index=False, name=None)):
             for c_idx, cell_value in enumerate(row_data):
                 cell = ws.cell(row=start_row + 1 + r_idx, column=start_col + c_idx, value=cell_value)
                 cell.border = Border(bottom=thin)
         
-        # Save the workbook
         wb.save(excel_path)
         wb.close()
         print(f"      ✅ Updated excel file: {excel_path} | Sheet: {sheet_name} | Cell: {start_cell} |")
@@ -474,7 +459,7 @@ class TableOptions:
     EXCEL_FILE_LOC = None
     EXCEL_SHEET_NAME = None
     EXCEL_CELL_POS = "end"
-    OUTPUT_FORMAT = 'Polars'
+    OUTPUT_FORMAT = 'Pandas'
 
     def __init__(self,force_unit:_forceType=None,len_unit:_lengthType=None,num_format:_numFormat=None,decimal_place:int=None,
                  JSONFileLoc=None,ExcelFileLoc=None , ExcelSheetName = None,ExcelCellPos = None , outputFormat = None):
