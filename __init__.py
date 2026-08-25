@@ -1,5 +1,5 @@
 import requests
-from ._mapi import NX,MidasAPI,MAPI_KEY,MAPI_BASEURL,MAPI_COUNTRY,Midas_help
+from ._mapi import NX,MidasAPI,MAPI_KEY,MAPI_BASEURL,Midas_help
 _version_ = "1.7.1"
 
 
