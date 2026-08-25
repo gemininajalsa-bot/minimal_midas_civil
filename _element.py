@@ -94,7 +94,6 @@ def _SInterp(angle,num_points):
     return angle_intrp_finalY
 
 def _interpolateAlignment(pointsArray,n_seg=10,deg=1,mSize=0,includePoint:bool=True,div_axis="L") -> list:
-    ''' Returns point list and beta angle list'''
     from scipy.interpolate import splev, splprep
     pointsArray = np.array(pointsArray)
     x_p, y_p , z_p  = pointsArray[:,0] , pointsArray[:,1] , pointsArray[:,2]

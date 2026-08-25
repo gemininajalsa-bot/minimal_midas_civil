@@ -1,19 +1,13 @@
 from ._mapi import MidasAPI
-# from ._utils import zz_add_to_dict,_convItem2List , sFlatten
+from ._utils import zz_add_to_dict,_convItem2List , sFlatten
 from math import hypot
-# from ._group import _add_node_2_stGroup
+from ._group import _add_node_2_stGroup
 from typing import Literal
 import numpy as np
-# from ._group import Group
+from ._group import Group
 
 _order = Literal['ID','XYZ','XZY','YXZ','YZX','ZXY','ZYX']
 
-# from utils 
-def zz_add_to_dict(dictionary, key, value):
-    if key in dictionary:
-        dictionary[key].append(value)
-    else:
-        dictionary[key] = [value]
 
 _location2Index = {
     'XYZ' : (0,1,2),
@@ -39,7 +33,6 @@ class _hNode:
     ID,X,Y,Z,AXIS,LOC = 0,0,0,0,0,0
 
 class Node:
-
     nodes: list[_hNode] = []
     ids: list[int] = []
     maxID:int = 0
@@ -49,7 +42,7 @@ class Node:
     ## TEMP DATA TO SPEED UP SELECTION FUNCTIONS
 
     def __init__(self, x: float, y: float, z: float, id: int = None, group: str = '', merge: bool = True):
-        
+
         if id == None: id =0
         #----------------- ORIGINAL -----------------------
     
@@ -122,6 +115,8 @@ class Node:
                 Node.Grid[cell_loc].append(self)
             Node.__nodeDic__[str(self.ID)] = self
             
+        if group !="":
+            _add_node_2_stGroup(self.ID,group)
 
         Node.maxID = max(self.ID,Node.maxID)
 
@@ -130,7 +125,7 @@ class Node:
         return (self.X,self.Y,self.Z)
 
     def __str__(self):
-        return f"NODE ID : {self.ID} | X:{self.X} , Y:{self.Y} , Z:{self.Z} {self.__dict__}"
+        return f"NODE ID : {self.ID} | X:{self.X} , Y:{self.Y} , Z:{self.Z} \n{self.__dict__}"
 
     @classmethod
     def json(cls):
@@ -141,9 +136,6 @@ class Node:
 
     @classmethod
     def create(cls):
-        """Send all nodes to MIDAS Civil NX (PUT /db/NODE).
-
-        """
         __maxNos__ = 40_000  #40_000 nodes can be sent in a single request
         __numItem__ = len(cls.nodes)
         __nTime__ = int(__numItem__/__maxNos__)+1
@@ -177,13 +169,11 @@ class Node:
 
     @staticmethod
     def delete():
-        """Delete all nodes from MIDAS Civil NX and clear the local database."""
         MidasAPI("DELETE","/db/NODE")
         Node.clear()
 
     @staticmethod
     def clear():
-        """Clear the local node database without affecting the MIDAS model."""
         Node.nodes=[]
         Node.ids=[]
         Node.Grid={}
@@ -225,7 +215,6 @@ class Node:
 
     @staticmethod
     def fromList(nodesList: list, id: int = None, group: str = '', merge: bool = True):
-        
         beam_nodes=[]
         for i,pt in enumerate(nodesList):
             if id != None : id_new = id+i
@@ -238,17 +227,43 @@ class Node:
 
 
 
-# ---- GET NODE OBJECT FROM ID ----------
+def nodesInGroup(groupName: str, unique: bool = True, reverse: bool = False, output: Literal['ID','NODE'] = 'ID',order:_order=None) -> list[_hNode]:
+    groupNames = _convItem2List(groupName)
+    nlist = []
+    for gName in groupNames:
+        chk=1
+        for i in Group.Structure.Groups:
+                if i.NAME == gName:
+                    chk=0
+                    eIDlist = i.NLIST
+                    nlist.append(eIDlist)
+        if chk:
+            print(f'⚠️   "{gName}" - Structure group not found !')
+    if unique:
+        finalNlistID = list(dict.fromkeys(sFlatten(nlist)))
+    else:
+        finalNlistID = sFlatten(nlist)
+  
 
-# def nodeByID(nodeID:int) -> Node:
-#     ''' Return Node object with the input ID '''
-#     for node in Node.nodes:
-#         if node.ID == nodeID:
-#             return node
-        
-#     print(f'There is no node with ID {nodeID}')
-#     return None
+    if order == None:
+        pass
+    elif order == 'ID':
+        finalNlistID.sort()
+    else:
+        _locationDic = {}
+        _a,_b,_c = _location2Index[order]
+        for nID in finalNlistID:
+            _nLOC = nodeByID(nID).LOC
+            _locationDic[nID] = (_nLOC[_a],_nLOC[_b],_nLOC[_c])
+        finalNlistID = [k for k, v in sorted(_locationDic.items(), key=lambda item: item[1])]
 
+    if reverse: finalNlistID = list(reversed(finalNlistID))
+
+    if output == 'NODE':
+        finalNlistNode = [nodeByID(nID) for nID in finalNlistID]
+        return finalNlistNode
+    
+    return finalNlistID
 
 def nodeByID(nodeID: int) -> Node:
     try:
@@ -350,18 +365,87 @@ def closestNode(point_location) -> Node:
                         checked_GridInt.append(cgridInt)
         return min_node
 
+def _ifNodeExist_(x, y, z) -> tuple:
+    cell_loc = str(f"{int(x)},{int(y)},{int(z)}")
+    if cell_loc in Node.Grid:
+        for node in Node.Grid[cell_loc]:
+            if hypot((x-node.X),(y-node.Y),(z-node.Z)) < 0.00001 :
+                return True,node.ID
+    return False,0
 
+
+def nodesInRadius(point_location, radius: float = 0, output: Literal['ID','NODE'] = 'ID', includeSelf: bool = False , bDistOutput=False) -> list:
+    gridStr = list(Node.Grid.keys())
+
+    bNode = False
+    id2Remove = 0
+    if isinstance(point_location,int):
+        bNode = True
+        id2Remove = point_location
+        nodeP = nodeByID(point_location)
+        point_location = (nodeP.X,nodeP.Y,nodeP.Z)
+        
+    elif isinstance(point_location,Node):
+        bNode = True
+        id2Remove = point_location.ID
+        point_location = (point_location.X,point_location.Y,point_location.Z)
+
+    if not includeSelf and not bNode:
+        bNode,id2Remove = _ifNodeExist_(point_location[0],point_location[1],point_location[2])
+
+    ifRemove = bNode and not includeSelf
+
+    checked_GridStr = []
+    close_nodes:list[int] = []
+    close_nodesID:list[Node] = []
+    _dist_record = {}
+
+
+    minX = int(point_location[0]-radius)
+    maxX = int(point_location[0]+radius)
+    minY = int(point_location[1]-radius)
+    maxY = int(point_location[1]+radius)
+    minZ = int(point_location[2]-radius)
+    maxZ = int(point_location[2]+radius)
+
+    gridStr = set(Node.Grid.keys())
+    grid_complete = Node.Grid
+
+    from ._model import _returnCommonGrid_
+    common_gridStr = _returnCommonGrid_(gridStr,minX,maxX,minY,maxY,minZ,maxZ)
+
+    for eachAvailGrid in common_gridStr:
+        for nd in grid_complete[eachAvailGrid]:
+            dist = hypot(nd.X-point_location[0],nd.Y-point_location[1],nd.Z-point_location[2])
+            if dist <= radius+0.0001 :
+                close_nodes.append(nd)
+                close_nodesID.append(nd.ID)
+                _dist_record[nd.ID] = dist
+
+    if output == 'NODE':
+        if ifRemove:
+            close_nodes.remove(nodeByID(id2Remove))
+            if bDistOutput:
+                return [(node,_dist_record[node.ID]) for node in close_nodes]
+            else:
+                return close_nodes
+    if ifRemove:
+        close_nodesID.remove(id2Remove)
+    
+    if bDistOutput:
+        return [(nID,_dist_record[nID]) for nID in close_nodesID]
+    else:
+        return close_nodesID
 
 
 
 class NodeLocalAxis:
 
-
     skew = []
     ids = []
 
     def __init__(self, nodeID: int, type: Literal['X', 'Y', 'Z', 'XYZ', 'Vector'], angle):
-      
+
         self.ID = nodeID
 
         if nodeID in NodeLocalAxis.ids:
@@ -409,7 +493,6 @@ class NodeLocalAxis:
 
     @classmethod
     def json(cls):
-
         json = {"Assign":{}}
         for i in cls.skew:
             if i.TYPE == 'ANGLE':
@@ -433,21 +516,19 @@ class NodeLocalAxis:
 
     @staticmethod
     def create():
-        """Push all local axis definitions to MIDAS Civil NX (PUT /db/SKEW)."""
         MidasAPI("PUT","/db/SKEW",NodeLocalAxis.json())
 
     @staticmethod
     def delete():
-        """Delete all local axis definitions from MIDAS Civil NX and clear the local database."""
         MidasAPI("DELETE","/db/SKEW")
         NodeLocalAxis.clear()
 
     @staticmethod
     def clear():
-        """Clear the local axis database without affecting the MIDAS model."""
         NodeLocalAxis.skew=[]
         NodeLocalAxis.ids=[]
 
     @staticmethod
     def get():
         return MidasAPI("GET","/db/SKEW")
+    
