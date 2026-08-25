@@ -4,7 +4,6 @@ from ._group import _add_node_2_stGroup,Group, _add_elem_2_stGroup
 import numpy as np
 from math import hypot,ceil
 from ._utils import _convItem2List , _longestList,sFlatten
-from colorama import Fore,Style
 from typing import Literal
 from ._material import Material
 from ._section import Section
