@@ -21,7 +21,7 @@ if NX.version_check:
     
 from ._model import Model
 from ._boundary import Boundary
-from ._utils import getID,getNodeID,utils,getLOC
+from ._utils import getID,getNodeID,getLOC
 from ._node import Node,nodeByID,closestNode,NodeLocalAxis,nodesInRadius,nodesInGroup
 from ._element import Element,elemByID,elemsInGroup  #Revise
 from ._group import Group
@@ -54,4 +54,4 @@ from ._heat_of_hydration import HoH
 from ._timehistory import TH
 from ._story import Story
     
-# from ._visualise import Snap
+from ._visualise import Snap

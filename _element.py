@@ -1,14 +1,13 @@
 from ._mapi import MidasAPI,NX
-from ._node import Node,nodeByID#,nodesInGroup
-#from ._group import _add_node_2_stGroup,Group, _add_elem_2_stGroup
+from ._node import Node,nodeByID,nodesInGroup
+from ._group import _add_node_2_stGroup,Group, _add_elem_2_stGroup
 import numpy as np
-# from scipy.interpolate import splev, splprep , interp1d , Akima1DInterpolator
 from math import hypot,ceil
 from ._utils import _convItem2List , _longestList,sFlatten
-#from colorama import Fore,Style
+from colorama import Fore,Style
 from typing import Literal
-#from ._material import Material
-#from ._section import Section
+from ._material import Material
+from ._section import Section
 _meshType = Literal['Quad','Tri']
 _extrudeInp = Literal['XYZ','NODE_ID']
 _order = Literal['ID','XYZ','XZY','YXZ','YZX','ZXY','ZYX']
@@ -24,50 +23,9 @@ _location2Index = {
 }
 
 def _cell(point): #SIZE OF GRID - string format
-    # return str(f"{int(point.X//size)},{int(point.Y//size)},{int(point.Z//size)}")
     return str(f"{int(point[0])},{int(point[1])},{int(point[2])}")
 
-def _createSurface(points,mSize,tagID):
-    import gmsh
-    final_points, num_points = _dividePoints(points,mSize)
-    
-    point_tags = []
-    for pt in final_points:
-        # print(pt)
-        point_tags.append(gmsh.model.occ.addPoint(pt[0],pt[1],pt[2],mSize))
-
-    line_tags = []
-    for i in range(num_points):
-        start = point_tags[i]  
-        end = point_tags[(i+1) % num_points]
-        line_tags.append(gmsh.model.occ.addLine(start, end))
-    loop = gmsh.model.occ.addCurveLoop(line_tags)
-    surface = gmsh.model.occ.addPlaneSurface([loop],tag=tagID)
-    gmsh.model.occ.synchronize()
-    return surface
-
-def _dividePoints(points,mSize):
-    num_points = len(points)
-    finer_points = [[points[0]]]
-
-    for q in range(num_points):
-        s_node = points[q]
-        e_node = points[(q+1)% num_points]
-
-        dist_node = hypot(e_node[0]-s_node[0],e_node[1]-s_node[1],e_node[2]-s_node[2])
-        n_div = max(int(dist_node//mSize),1)
-
-        int_nodes = np.linspace(s_node,e_node,n_div+1)
-        finer_points.append(int_nodes[1:])
-        # print(int_nodes)
-
-    final_points = sFlatten(finer_points)[:-1]
-    num_points = len(final_points)
-
-    return final_points,num_points
-
 def _SInterp(angle,num_points):
-    ''' Angle -> Input list | Num Points -> Output length'''
     from scipy.interpolate import interp1d , Akima1DInterpolator
     angle = _convItem2List(angle)
     if len(angle) == 1 : 
@@ -261,10 +219,6 @@ def _pointOffset(pts,yEcc=0,zEcc=0,angle=0):
 
 
 def _ADD(self):
-    """
-    Adds an element to the main list. If the ID is 0, it auto-increments.
-    If the ID already exists, it replaces the existing element.
-    """
 
     # ------------  ID assignment -----------------------
     if NX.onlyNode == False :
@@ -301,36 +255,36 @@ def _ADD(self):
             Element.Grid[cell_loc].append(self)
         
         # ------------  Group assignment -----------------------
-    #     if self._GROUP == "" :
-    #         pass
-    #     elif isinstance(self._GROUP, list):
-    #         for gpName in self._GROUP:
-    #             _add_elem_2_stGroup(self.ID,gpName)
-    #             # for nd in self.NODE:
-    #             _add_node_2_stGroup(self.NODE,gpName)
-    #     elif isinstance(self._GROUP, str):
-    #         _add_elem_2_stGroup(self.ID,self._GROUP)
-    #         # for nd in self.NODE:
-    #         _add_node_2_stGroup(self.NODE,self._GROUP)
+        if self._GROUP == "" :
+            pass
+        elif isinstance(self._GROUP, list):
+            for gpName in self._GROUP:
+                _add_elem_2_stGroup(self.ID,gpName)
+                # for nd in self.NODE:
+                _add_node_2_stGroup(self.NODE,gpName)
+        elif isinstance(self._GROUP, str):
+            _add_elem_2_stGroup(self.ID,self._GROUP)
+            # for nd in self.NODE:
+            _add_node_2_stGroup(self.NODE,self._GROUP)
 
         
-    #     if isinstance(self.MATL,str):
-    #         self.MATL = Material._dic.get(self.MATL,99)
+        if isinstance(self.MATL,str):
+            self.MATL = Material._dic.get(self.MATL,99)
 
-    #     if isinstance(self.SECT,str):
-    #         self.SECT = Section._dic.get(self.SECT,99)
+        if isinstance(self.SECT,str):
+            self.SECT = Section._dic.get(self.SECT,99)
 
 
-    # else:
-    #     if self._GROUP == "" :
-    #         pass
-    #     elif isinstance(self._GROUP, list):
-    #         for gpName in self._GROUP:
-    #             for nd in self.NODE:
-    #                 _add_node_2_stGroup(nd,gpName)
-    #     elif isinstance(self._GROUP, str):
-    #         for nd in self.NODE:
-    #             _add_node_2_stGroup(nd,self._GROUP)
+    else:
+        if self._GROUP == "" :
+            pass
+        elif isinstance(self._GROUP, list):
+            for gpName in self._GROUP:
+                for nd in self.NODE:
+                    _add_node_2_stGroup(nd,gpName)
+        elif isinstance(self._GROUP, str):
+            for nd in self.NODE:
+                _add_node_2_stGroup(nd,self._GROUP)
             
 
 
@@ -338,13 +292,11 @@ def _ADD(self):
 
 
 def _updateElem(self):
-    """Sends a PUT request to update a single element in Midas."""
     js2s = {'Assign': {self.ID: _Obj2JS(self)}}
     MidasAPI('PUT', '/db/elem', js2s)
     return js2s
 
 def _Obj2JS(obj):
-    """Converts a Python element object to its JSON dictionary representation."""
     # Base attributes common to many elements
     js = {
         "TYPE": obj.TYPE,
@@ -395,7 +347,6 @@ def _Obj2JS(obj):
     return js
 
 def _JS2Obj(id, js):
-    """Converts a JSON dictionary back into a Python element object during sync."""
     elem_type = js.get('TYPE')
     
     # Prepare arguments for constructors
@@ -439,19 +390,14 @@ def _JS2Obj(id, js):
 class _helperELEM:
     ID, TYPE, MATL,SECT,NODE,ANGLE,LENGTH,STYPE,AREA,NORMAL,CENTER,LOCALX,LOCALY,LOCALZ = 0,0,0,0,0,0,0,0,0,0,0,0,0,0
 class _common:
-    """Common base class for all element types."""
     def __str__(self):
-        return str(f'ID = {self.ID} JSON : {_Obj2JS(self)}')
+        return str(f'ID = {self.ID} \nJSON : {_Obj2JS(self)}\n')
 
     def update(self):
         return _updateElem(self)
 
 # --- Main Element Class ---
 class Element():
-    """
-    Main class to create and manage structural elements like Beams, Trusses,
-    Plates, Tension/Compression-only elements, and Solids.
-    """
     elements:list[_helperELEM] = []
     ids:list[int] = []
     maxID:int = 0
@@ -460,7 +406,6 @@ class Element():
 
     
     lastLoc = (0,0,0) #Last Location created using Beam element
-    '''Last Node Location created by Beam / Truss element - (x,y,z)'''
 
     @staticmethod
     def _deleteElem(eID):
@@ -530,27 +475,11 @@ class Element():
         Element.ids = []
         Element.__elemDIC__={}
         Element.maxID = 0
-        # _curve.curves = []
-        # _quadShape.shapes = []
 
     # --- Element Type Subclasses ---
     class Wall(_common):
         def __init__(self, nodes: list, stype: int = 2, wtype:int = 0, wID:int = 1,mat: int = 1, sect: int = 1, group = "" , id: int = None):
-            """
-            Creates a WALL element.
-            
-            Parameters:
-                nodes: List of node IDs [n1, n2, n3, n4]
-                stype: Element subtype (1=Membrane, 2=Plate) (default 2)
-                wtype: Wall type (0=Plate Base, 1=CRB-Pin , 2=CRB-Fixed) (default 0)
-                wID: Wall ID (default 1)
-                mat: Material property number (default 1)
-                sect: Section (thickness) property number (default 1)
-                angle: Material angle for orthotropic materials in degrees (default 0.0)
-                group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-                id: Element ID (default None for auto-increment)
-            
-            """
+
             if id == None: id =0
             self.ID = id
             self.TYPE = 'WALL'
@@ -581,21 +510,7 @@ class Element():
     class Beam(_common):
 
         def __init__(self, i: int, j: int, mat: int = 1, sect: int = 1, angle: float = 0, group:str = "" , id: int = None,bLocalAxis:bool=False):
-            """
-            Creates a BEAM element for frame analysis.
-            
-            Parameters:
-                i: Start node ID
-                j: End node ID  
-                mat: Material property number (default 1)
-                sect: Section property number (default 1)
-                angle: Beta angle for section orientation in degrees (default 0.0)
-                group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-                id: Element ID (default None for auto-increment)
-                
-            
-            Examples:
-            """
+
             if id == None: id =0
             self.ID = id
             self.TYPE = 'BEAM'
@@ -685,58 +600,7 @@ class Element():
                   mat: int = 1, sect: int = 1, angle: list[float] = 0,
                   group: str = "", id: int = None, bLocalAxis: bool = False,
                   div_axis: Literal['X','Y','Z','L'] = "L"):
-            """Create beam elements along a polyline through multiple points.
-
-            Points are optionally interpolated along a spline of degree deg
-            before elements are created. The beta angle is MAKIMA-interpolated
-            across elements when a list is supplied.
-
-            Args:
-                points_loc (list[list[float]]): Control points [[x,y,z], ...]
-                    defining the polyline path.
-                n_div (int): Number of divisions along the spline. 0 uses
-                    the raw points without interpolation.
-                deg (int): Spline degree for interpolation (1 = linear,
-                    2 = quadratic, 3 = cubic). Clamped to
-                    [1, len(points_loc)-1].
-                includePoint (bool): When True, the original control points
-                    are forced into the interpolated output even if they fall
-                    between two division points.
-                mat (int): Material property number. Default 1.
-                sect (int): Section property number. Default 1.
-                angle (float | list[float]): Beta angle(s) in degrees for
-                    section orientation.
-
-                    - Single value → constant angle along all elements.
-                    - Two values [start, end] → linearly interpolated.
-                    - Three or more values → MAKIMA-interpolated; values are
-                      placed at equally spaced positions along the polyline,
-                      e.g. [0, 10, 0] means 0° at start, 10° at mid,
-                      0° at end.
-
-                group (str | list[str]): Structure group(s) to assign each
-                    element and its nodes to.
-                id (int | None): Starting element ID. Subsequent elements
-                    receive id+1, id+2, … Auto-assigned when None.
-                bLocalAxis (bool): If True, accumulates the local axis
-                    vectors onto the end nodes (used for skew angle display).
-                div_axis (Literal['X','Y','Z','L']): Axis along which equal
-                    spacing is measured during interpolation.
-                    'L' = arc length (default).
-
-            Returns:
-                list[Element.Beam]: Created beam element objects, in order
-                from start to end.
-
-            Example::
-
-                # Straight line, 5 divisions
-                Element.Beam.PLine([[0,0,0],[10,0,0]], n_div=5, mat=1, sect=2)
-
-                # Curved girder, angle varies from 0° to 30° to 0°
-                pts = [[0,0,0],[5,1,0],[10,0,0]]
-                Element.Beam.PLine(pts, n_div=10, deg=2, angle=[0, 30, 0])
-            """
+            
             if id == None: id = 0
             beam_nodes = []
             beam_obj = []
@@ -765,8 +629,7 @@ class Element():
                    div_axis: Literal['X','Y','Z','L'] = "L",
                    yEcc: list[float] = 0, zEcc: list[float] = 0,
                    bAngleInEcc: bool = True):
-            """Create beam elements along a polyline with cross-section eccentricity offsets.
-            """
+            
             from ._utils import _matchArray
             if id == None: id = 0
             beam_nodes = []
@@ -800,20 +663,7 @@ class Element():
 
     class Truss(_common):
         def __init__(self, i: int, j: int, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None):
-            """
-            Creates a TRUSS element
-            
-            Parameters:
-                i: Start node ID
-                j: End node ID
-                mat: Material property number (default 1)
-                sect: Section property number (default 1)
-                angle: Beta angle for section orientation in degrees (default 0.0)
-                group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-                id: Element ID (default 0 for auto-increment)
-            
-            Examples:
-            """
+           
             if id == None: id =0
             self.ID = id
             self.TYPE = 'TRUSS'
@@ -888,20 +738,6 @@ class Element():
           
     class Plate(_common):
         def __init__(self, nodes: list, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None):
-            """
-            Creates a PLATE element.
-            
-            Parameters:
-                nodes: List of node IDs [n1, n2, n3] for triangular or [n1, n2, n3, n4] for quadrilateral
-                stype: Plate subtype (1=Thick plate, 2=Thin plate, 3=With drilling DOF) (default 1)
-                mat: Material property number (default 1)
-                sect: Section (thickness) property number (default 1)
-                angle: Material angle for orthotropic materials in degrees (default 0.0)
-                group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-                id: Element ID (default 0 for auto-increment)
-            
-            Examples:
-            """
             if id == None: id =0
             self.ID = id
             self.TYPE = 'PLATE'
@@ -955,138 +791,61 @@ class Element():
 
             _ADD(self)
 
+        
         @staticmethod
-        def fromPoints(points: list, meshSize:float=1.0,meshType:_meshType='Tri', innerPoints:list=None,stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None): #CHANGE TO TUPLE
-            # INPUTS POINTS and create a triangular/quad meshing with given mesh size  |  If meshSize = 0 , half of shortest length will be taken as mesh size
+        def loftGroups(strGroups: list, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None,nDiv:int=1,bClose:bool=False): #CHANGE TO TUPLE
+                # INPUTS 2 or more structure groups to create rectangular plates between the nodes | No. of nodes should be same in the Str Group
             id_new = None
-            bHole = False
-            import gmsh
-            gmsh.initialize(["-no_sig_handler", "-nopopup"],interruptible=False)
-            gmsh.option.setNumber("General.Terminal", 0)
-
-            surface_Main = _createSurface(points,meshSize,1)
-            if innerPoints: 
-                bHole = True
-                if not isinstance(innerPoints[0][0],(int,float)):
-                    # MULTIPLE HOLE
-                    _holes_tag = []
-                    for i,holePTs in enumerate(innerPoints):
-                        surface_Hole = _createSurface(holePTs,meshSize,2)
-                        surface_Final = gmsh.model.occ.cut([(2,1)], [(2,2)], removeObject=True, removeTool=True)
-                
-                else:
-                    # SINGLE HOLE
-                    surface_Hole = _createSurface(innerPoints,meshSize,2)
-                    surface_Final = gmsh.model.occ.cut([(2,1)], [(2,2)], removeObject=True, removeTool=True)
-                
-
-
-            gmsh.model.occ.synchronize()
-
-            if meshType == 'Quad':
-                if not bHole:
-                    gmsh.option.setNumber("Mesh.Algorithm", 11)      # WITHOUT HOLE
-                    gmsh.option.setNumber("Mesh.MeshSizeMin", 4*meshSize)
-                
-                else:
-                    gmsh.option.setNumber("Mesh.Algorithm", 8)      # WITH HOLE
-                    # gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-                    gmsh.option.setNumber("Mesh.RecombineAll", 1)
-                    gmsh.option.setNumber("Mesh.MeshSizeMin", 4*meshSize)
-            else:
-                gmsh.option.setNumber("Mesh.Algorithm", 1) 
-                gmsh.option.setNumber("Mesh.MeshSizeMin", 1.5*meshSize)
-
-            
-            gmsh.option.setNumber("Mesh.Smoothing", 3)
-            gmsh.model.mesh.generate(2)
-
-            _, node_coords, _ = gmsh.model.mesh.getNodes()
-            nodes = np.array(node_coords).reshape(-1, 3)  # (N, 3) array
-
-            _, _, elemNodeTags = gmsh.model.mesh.getElements(2)
-            if meshType == 'Quad':
-                elemNODE = np.array(elemNodeTags).reshape(-1, 4) 
-            else:
-                elemNODE = np.array(elemNodeTags).reshape(-1, 3) 
-
-            # gmsh.fltk.run()
-            gmsh.finalize()
-            
-            nID_list = []
-            for nd in nodes:
-                nID_list.append(Node(nd[0],nd[1],nd[2]).ID)
-
+            n_groups = len(strGroups)
+            if n_groups < 2 :
+                print("⚠️ No. of structure groups in Plate.loftGroups in less than 2")
+                return False
             plate_obj = []
-            for i,elmNd in enumerate(elemNODE):
-                if id != None : id_new = id+i
-                plate_obj.append(Element.Plate([nID_list[int(x)-1] for x in elmNd],stype,mat,sect,angle,group,id_new))
+            for ng in range(n_groups-1):
+                nID_A = nodesInGroup(strGroups[ng])   
+                nID_B = nodesInGroup(strGroups[ng+1])
+                if bClose:
+                    nID_A.append(nID_A[0])
+                    nID_B.append(nID_B[0])
+
+                max_len = max(len(nID_A),len(nID_B))
+                if max_len < 2 :
+                    print("⚠️ No. of nodes in Plate.loftGroups in less than 2")
+                    return False
+
+                nID_A , nID_B = _longestList(nID_A , nID_B)
+
+                if nDiv == 1 :
+                    for i in range(max_len-1):
+                        if id != None : id_new = id+i
+                        pt_array = [nID_A[i],nID_B[i],nID_B[i+1],nID_A[i+1]]
+                        plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
+                if nDiv > 1 :
+                    nID_dic = {}
+                    for j in range(nDiv+1):
+                        nID_dic[j] = []
+                    nID_dic[0] = nID_A
+                    nID_dic[nDiv] = nID_B
+                    for i in range(max_len):
+                        loc0= nodeByID(nID_A[i]).LOC
+                        loc1 = nodeByID(nID_B[i]).LOC
+                        int_points = np.linspace(loc0,loc1,nDiv+1)
+
+                        for j in range(nDiv-1):
+                            nID_dic[j+1].append(Node(int_points[j+1][0],int_points[j+1][1],int_points[j+1][2]).ID)
+                    j=0
+                    for q in range(nDiv):
+                        for i in range(max_len-1):
+                            if id != None : id_new = id+j
+                            pt_array = [nID_dic[q][i],nID_dic[q+1][i],nID_dic[q+1][i+1],nID_dic[q][i+1]]
+                            plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id))
+                            j+=1
 
             return plate_obj
-        
-        # @staticmethod
-        # def loftGroups(strGroups: list, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None,nDiv:int=1,bClose:bool=False): #CHANGE TO TUPLE
-        #         # INPUTS 2 or more structure groups to create rectangular plates between the nodes | No. of nodes should be same in the Str Group
-        #     """
-        #     INPUTS 2 or more structure groups to create rectangular plates between the nodes  
-        #     No. of nodes should be same in the Str Group
-        #     """
-        #     id_new = None
-        #     n_groups = len(strGroups)
-        #     if n_groups < 2 :
-        #         print("⚠️ No. of structure groups in Plate.loftGroups in less than 2")
-        #         return False
-        #     plate_obj = []
-        #     for ng in range(n_groups-1):
-        #         nID_A = nodesInGroup(strGroups[ng])   
-        #         nID_B = nodesInGroup(strGroups[ng+1])
-        #         if bClose:
-        #             nID_A.append(nID_A[0])
-        #             nID_B.append(nID_B[0])
-
-        #         max_len = max(len(nID_A),len(nID_B))
-        #         if max_len < 2 :
-        #             print("⚠️ No. of nodes in Plate.loftGroups in less than 2")
-        #             return False
-
-        #         nID_A , nID_B = _longestList(nID_A , nID_B)
-
-        #         if nDiv == 1 :
-        #             for i in range(max_len-1):
-        #                 if id != None : id_new = id+i
-        #                 pt_array = [nID_A[i],nID_B[i],nID_B[i+1],nID_A[i+1]]
-        #                 plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id_new))
-        #         if nDiv > 1 :
-        #             nID_dic = {}
-        #             for j in range(nDiv+1):
-        #                 nID_dic[j] = []
-        #             nID_dic[0] = nID_A
-        #             nID_dic[nDiv] = nID_B
-        #             for i in range(max_len):
-        #                 loc0= nodeByID(nID_A[i]).LOC
-        #                 loc1 = nodeByID(nID_B[i]).LOC
-        #                 int_points = np.linspace(loc0,loc1,nDiv+1)
-
-        #                 for j in range(nDiv-1):
-        #                     nID_dic[j+1].append(Node(int_points[j+1][0],int_points[j+1][1],int_points[j+1][2]).ID)
-        #             j=0
-        #             for q in range(nDiv):
-        #                 for i in range(max_len-1):
-        #                     if id != None : id_new = id+j
-        #                     pt_array = [nID_dic[q][i],nID_dic[q+1][i],nID_dic[q+1][i+1],nID_dic[q][i+1]]
-        #                     plate_obj.append(Element.Plate(pt_array,stype,mat,sect,angle,group,id))
-        #                     j+=1
-
-        #     return plate_obj
         
         @staticmethod
         def extrude(inpType:_extrudeInp,input: list,dir:list,nDiv:int=1,bClose:bool=False, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None): #CHANGE TO TUPLE
                 # INPUTS 2 or more structure groups to create rectangular plates between the nodes | No. of nodes should be same in the Str Group
-            """
-            Enter node id list to extrude along a vector
-            inpType ->  'XYZ' -> points = ((x,y,z),(x,y,z))
-                        'NODE_ID' -> points = (1,2,3,..) Node IDs
-            """
             nDiv = int(nDiv)
             nID_A = []
             nID_B = []
@@ -1162,8 +921,6 @@ class Element():
         @staticmethod
         def extrudeLine(elmIDs: list,dir:list,nDiv:int=1,bDeleteLine:bool=False, stype: int = 1, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None): #CHANGE TO TUPLE
                 # INPUTS 2 or more structure groups to create rectangular plates between the nodes | No. of nodes should be same in the Str Group
-            """
-            """
             nDiv = int(nDiv)
             nID_A = []
             nID_B = []
@@ -1222,65 +979,10 @@ class Element():
             if bDeleteLine:
                 for eID in elmIDs:
                     Element._deleteElem(eID)
-                # return finalPlateObj
-
-
-            
-
-
-
-            
-            
-            # if inpType in ('NODE_ID','XYZ'):
-            #     return _createPlateExtrude(nID_A,nID_B,nDiv,id)
-            
-
-        # @staticmethod
-        # def quad(points:list,meshSize:float=1):
-        #     if len(points)!=4:
-        #         print("Enter 4 points !!")
-        #         return 0
-            
-        #     _n1 = Node(points[0][0],points[0][1],points[0][2])
-        #     _n2 = Node(points[1][0],points[1][1],points[1][2])
-        #     _n3 = Node(points[2][0],points[2][1],points[2][2])
-        #     _n4 = Node(points[3][0],points[3][1],points[3][2])
-
-        #     _c1 = _createCurve(_n1.ID,_n2.ID,meshSize)
-        #     _c2 = _createCurve(_n2.ID,_n3.ID,meshSize)
-        #     _c3 = _createCurve(_n3.ID,_n4.ID,meshSize)
-        #     _c4 = _createCurve(_n4.ID,_n1.ID,meshSize)
-
-        #     _shape = _quadShape([_c1,_c2,_c3,_c4])
-
-        #     return _shape
-
-        # @staticmethod
-        # def __meshShapes():
-        #     for shape in _quadShape.shapes:
-        #         shape.mesh()
-
+  
     class Tension(_common):
      def __init__(self, i: int, j: int, stype: int, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None, non_len: float = None, cable_type: int = None, tens: float = None, t_limit: float = None):
-        """
-        Creates a TENSTR (Tension-only) element.
-        
-        Parameters:
-            i: Start node ID
-            j: End node ID
-            stype: Tension element subtype (1=Tension-only, 2=Hook, 3=Cable)
-            mat: Material property number (default 1)
-            sect: Section property number (default 1)
-            angle: Beta angle for section orientation in degrees (default 0.0)
-            group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-            id: Element ID (default 0 for auto-increment)
-            non_len: Non-linear length parameter for Hook/Cable (default None)
-            cable_type: Cable type for stype=3 (1=Pretension, 2=Horizontal, 3=Lu) (default None)
-            tens: Initial tension force or allowable compression (default None)
-            t_limit: Tension limit value. If provided, the tension limit flag is set to True. (default None)
-        
-        Examples:
-        """
+
         if id == None: id =0
         self.ID = id
         self.TYPE = 'TENSTR'
@@ -1329,24 +1031,7 @@ class Element():
 
     class Compression(_common):
         def __init__(self, i: int, j: int, stype: int, mat: int = 1, sect: int = 1, angle: float = 0, group = "" , id: int = None, tens: float = None, t_limit: float = None, non_len: float = None):
-            """
-            Creates a COMPTR (Compression-only) element.
-            
-            Parameters:
-                i: Start node ID
-                j: End node ID
-                stype: Compression element subtype (1=Compression-only, 2=Gap)
-                mat: Material property number (default 1)
-                sect: Section property number (default 1)
-                angle: Beta angle for section orientation in degrees (default 0.0)
-                group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-                id: Element ID (default 0 for auto-increment)
-                tens: Allowable tension or initial compression force (default None)
-                t_limit: Compression limit value. If provided, the compression limit flag is set to True. (default None)
-                non_len: Non-linear length parameter for gap (default None)
-            
-            Examples:
-            """
+           
             if id == None: id =0
             self.ID = id
             self.TYPE = 'COMPTR'
@@ -1387,20 +1072,7 @@ class Element():
 
     class Solid(_common):
         def __init__(self, nodes: list, mat: int = 1, group = "" , id: int = None):
-            """
-            Creates a SOLID element for 3D analysis.
-            
-            Parameters:
-                nodes: List of node IDs defining the solid element
-                       - 4 nodes: Tetrahedral element
-                       - 6 nodes: Pentahedral element  
-                       - 8 nodes: Hexahedral element
-                mat: Material property number (default 1)
-                group: Structure group of the element (str or list; 'SG1' or ['SG1','SG2'])
-                id: Element ID (default 0 for auto-increment)
-            
-            Examples:
-            """
+           
             if id == None: id =0
             if len(nodes) not in [4, 6, 8]:
                 raise ValueError("Solid element must have 4, 6, or 8 nodes.")
@@ -1473,164 +1145,7 @@ class Element():
                 for eID in plateElmIDs:
                     Element._deleteElem(eID)
 
-        @staticmethod
-        def fromPoints(facePts:list,meshSize:float=None,mat:int=1,group='',id:int=None):
-            import gmsh
-            gmsh.initialize(["-no_sig_handler", "-nopopup"],interruptible=False)
-            # gmsh.initialize()
-            gmsh.option.setNumber("General.Terminal", 0)
-            gmsh.model.add("loft")
-
-            id_new = None
-            if meshSize == None: 
-                meshSize = 0
-            else:
-                gmsh.option.setNumber("Mesh.MeshSizeMin", meshSize)
-                gmsh.option.setNumber("Mesh.MeshSizeMax", meshSize)
-
-            MESH_SIZE = float(meshSize)
-
-            def make_wire(points):
-                p_tags = [gmsh.model.occ.addPoint(*p,MESH_SIZE) for p in points]
-
-                lines = []
-                n = len(p_tags)
-                for i in range(n):
-                    lines.append(
-                        gmsh.model.occ.addLine(
-                            p_tags[i],
-                            p_tags[(i + 1) % n]
-                        )
-                    )
-
-                return gmsh.model.occ.addWire(lines)
-
-            facePTs_wire = []
-            for pts in facePts:
-                facePTs_wire.append(make_wire(pts))
-
-            # Create solid loft
-            volumes = gmsh.model.occ.addThruSections(
-                facePTs_wire,
-                makeSolid=True,
-                makeRuled=True
-            )
-
-            gmsh.model.occ.synchronize()
-            gmsh.model.mesh.generate(3)
-            
-
-            _, node_coords, _ = gmsh.model.mesh.getNodes()
-            nodes = np.array(node_coords).reshape(-1, 3)  # (N, 3) array
-            _, _, elemNodeTags = gmsh.model.mesh.getElements(3)
-            gmsh.finalize()
-
-            elemNODE = np.array(elemNodeTags).reshape(-1, 4) 
-            nID_list = []
-            for nd in nodes:
-                nID_list.append(Node(nd[0],nd[1],nd[2]).ID)
-
-
-            solid_obj = []
-            for i,elmNd in enumerate(elemNODE):
-                if id!=None: id_new=id+i
-                solid_obj.append(Element.Solid([nID_list[int(x)-1] for x in elmNd],mat,group,id_new))
-
-            
-
-            return solid_obj
-
-        @staticmethod
-        def fromMSHfile(fileLoc:str,mat:int=1,group='',id:int=None):
-            import gmsh
-            gmsh.initialize(["-no_sig_handler", "-nopopup"],interruptible=False)
-            gmsh.option.setNumber("General.Terminal", 0)
-            gmsh.open(fileLoc)
-
-            id_new = None
-
-            _, node_coords, _ = gmsh.model.mesh.getNodes()
-            nodes = np.array(node_coords).reshape(-1, 3)  # (N, 3) array
-            _, _, elemNodeTags = gmsh.model.mesh.getElements(3) # ONLY SOLID
-            gmsh.finalize()
-
-            elemNODE = np.array(elemNodeTags).reshape(-1, 4) 
-            nID_list = []
-            for nd in nodes:
-                nID_list.append(Node(nd[0],nd[1],nd[2]).ID)
-
-            solid_obj = []
-            for i,elmNd in enumerate(elemNODE):
-                if id!=None: id_new=id+i
-                solid_obj.append(Element.Solid([nID_list[int(x)-1] for x in elmNd],mat,group,id_new))
-
-            return solid_obj
-
-# class _quadShape():
-#     shapes = []
-#     def __init__(self,curves):
-#         self.CURVE = curves
-#         _quadShape.shapes.append(self)
-#     def __str__(self):
-#         nIds = []
-#         mSize = []
-#         for crv in self.CURVE:
-#             nIds.append(crv.ONODE)
-#             mSize.append(crv.MESH_SIZE)
-#         return str(f"QUAD SHAPENODES = {nIds}SIZE = {mSize}")
-#     def mesh(self):
-#         nX = max(self.CURVE[0].NUM,self.CURVE[2].NUM)
-#         nY = max(self.CURVE[1].NUM,self.CURVE[3].NUM)
-#         # print(nX,nY)
-#         loc0= nodeByID(self.CURVE[0].ONODE[0]).LOC
-#         loc1= nodeByID(self.CURVE[1].ONODE[0]).LOC
-#         loc2= nodeByID(self.CURVE[2].ONODE[0]).LOC
-#         loc3= nodeByID(self.CURVE[3].ONODE[0]).LOC
-#         # print(loc0,loc1,loc2,loc3)
-#         c1_points = np.linspace(loc0,loc1,nX+1)
-#         # c2_points = np.linspace(loc1,loc2,nY+1)
-#         c3_points = np.linspace(loc3,loc2,nX+1)
-#         # c4_points = np.linspace(loc0,loc3,nY+1)
-#         nIDList = {}
-#         for i in range(nX+1):
-#             nIDList[i] = []
-#             ndY = np.linspace(c1_points[i],c3_points[i],nY+1)
-#             for j in range(nY+1):
-#                 nIDList[i].append(Node(ndY[j][0],ndY[j][1],ndY[j][2]).ID)
-
-#         for q in range(nX):
-#             for i in range(nY):
-#                 pt_array = [nIDList[q][i],nIDList[q+1][i],nIDList[q+1][i+1],nIDList[q][i+1]]
-#                 Element.Plate(pt_array)
-
-
-
-#         # Element.Plate([self.CURVE[0].ONODE[0],self.CURVE[1].ONODE[0],self.CURVE[2].ONODE[0],self.CURVE[3].ONODE[0]])
-        
-
-# class _curve():
-#     curves = []
-#     def __init__(self,iNodeID,jNodeID,meshSize):
-#         _nodes = sorted([iNodeID,jNodeID])  
-#         self.NODE = _nodes
-#         self.ONODE = [iNodeID,jNodeID]
-#         self.MESH_SIZE = meshSize
-#         self.LENGTH = _nodeDIST(nodeByID(iNodeID),nodeByID(jNodeID))
-#     @property
-#     def NUM(self):
-#         return ceil(self.LENGTH/self.MESH_SIZE)
-
-# def _createCurve(iNodeID,jNodeID,meshSize)-> _curve:
-#     _nodes = sorted([iNodeID,jNodeID])
-#     for crv in _curve.curves:
-#         if _nodes == crv.NODE:
-#             meshSize = min(crv.MESH_SIZE,meshSize)
-#             crv.MESH_SIZE = meshSize
-#     newcrv = _curve(iNodeID,jNodeID,meshSize)
-#     _curve.curves.append(newcrv)
-#     return newcrv
-
-
+       
 # #-----------------------------------------------Stiffness Scale Factor------------------------------
 
     class StiffnessScaleFactor:
@@ -1648,32 +1163,15 @@ class Element():
                     wgt_sf: float = 1.0,
                     group: str = "",
                     id: int = None):
-            """
-                element_id: Element ID(s) where scale factor is applied (can be int or list)
-                area_sf: Cross-sectional area scale factor
-                asy_sf: Effective Shear Area scale factor (y-axis)
-                asz_sf: Effective Shear Area scale factor (z-axis)
-                ixx_sf: Torsional Resistance scale factor (x-axis)
-                iyy_sf: Area Moment of Inertia scale factor (y-axis)
-                izz_sf: Area Moment of Inertia scale factor (z-axis)
-                wgt_sf: Weight scale factor
-                group: Group name (default "")
-                id: Scale factor ID (optional, auto-assigned if None)
-            
-            Examples:
-                StiffnessScaleFactor(908, area_sf=0.5, asy_sf=0.6, asz_sf=0.7, 
-                                ixx_sf=0.8, iyy_sf=0.8, izz_sf=0.9, wgt_sf=0.95)
-                
-            """
-            
+
             # Check if group exists, create if not
-            # if group != "":
-            #     chk = 0
-            #     a = [v['NAME'] for v in Group.Boundary.json()["Assign"].values()]
-            #     if group in a:
-            #         chk = 1
-            #     if chk == 0:
-            #         Group.Boundary(group)
+            if group != "":
+                chk = 0
+                a = [v['NAME'] for v in Group.Boundary.json()["Assign"].values()]
+                if group in a:
+                    chk = 1
+                if chk == 0:
+                    Group.Boundary(group)
             
             # Handle element_id as single int or list
             if isinstance(element_id, (list, tuple)):
@@ -1701,9 +1199,7 @@ class Element():
         
         @classmethod
         def json(cls):
-            """
-            Converts StiffnessScaleFactor data to JSON format
-            """
+
             json_data = {"Assign": {}}
             
             for scale_factor in cls.data:
@@ -1731,23 +1227,17 @@ class Element():
         
         @classmethod
         def create(cls):
-            """
-            Sends all StiffnessScaleFactor data to the API
-            """
+
             MidasAPI("PUT", "/db/essf", cls.json())
         
         @classmethod
         def get(cls):
-            """
-            Retrieves StiffnessScaleFactor data from the API
-            """
+
             return MidasAPI("GET", "/db/essf")
         
         @classmethod
         def sync(cls):
-            """
-            Updates the StiffnessScaleFactor class with data from the API
-            """
+
             cls.data = []
             response = cls.get()
             
@@ -1787,69 +1277,55 @@ class Element():
         
         @classmethod
         def delete(cls):
-            """
-            Deletes all stiffness scale factors from the database and resets the class.
-            """
+
             cls.data = []
             return MidasAPI("DELETE", "/db/essf")
 
 
 
 
-# ---- GET ELEMENT OBJECT FROM ID ----------
-
-# def elemByID2(elemID:int) -> Element:
-#     ''' Return Element object with the input ID '''
-#     for elem in Element.elements:
-#         if elem.ID == elemID:
-#             return elem
-        
-#     print(f'There is no element with ID {elemID}')
-#     return None
 
 def elemByID(elemID:int) -> _helperELEM:
-    ''' Return Element object with the input ID '''
     try:
         return (Element.__elemDIC__[str(elemID)])
     except:
-        print(f'There is no element with ID {elemID}')
+        print(Fore.RED +f'There is no element with ID {elemID}'+Style.RESET_ALL)
         return None
     
-# def elemsInGroup(groupName:str,unique:bool=True,reverse:bool=False,output:Literal['ID','ELEM']='ID',order:_order=None) -> list[_helperELEM]:
-#     ''' Returns Element ID list or Element object list in a Structure Group '''
-#     groupNames = _convItem2List(groupName)
-#     elist = []
-#     for gName in groupNames:
-#         chk=1
-#         for i in Group.Structure.Groups:
-#                 if i.NAME == gName:
-#                     chk=0
-#                     eIDlist = i.ELIST
-#                     elist.append(eIDlist)
-#         if chk:
-#             print(f'⚠️   "{gName}" - Structure group not found !')
-#     if unique:
-#         finalElistID = list(dict.fromkeys(sFlatten(elist)))
-#     else:
-#         finalElistID = sFlatten(elist)
+def elemsInGroup(groupName:str,unique:bool=True,reverse:bool=False,output:Literal['ID','ELEM']='ID',order:_order=None) -> list[_helperELEM]:
+    groupNames = _convItem2List(groupName)
+    elist = []
+    for gName in groupNames:
+        chk=1
+        for i in Group.Structure.Groups:
+                if i.NAME == gName:
+                    chk=0
+                    eIDlist = i.ELIST
+                    elist.append(eIDlist)
+        if chk:
+            print(f'⚠️   "{gName}" - Structure group not found !')
+    if unique:
+        finalElistID = list(dict.fromkeys(sFlatten(elist)))
+    else:
+        finalElistID = sFlatten(elist)
   
 
-#     if order == None:
-#         pass
-#     elif order == 'ID':
-#         finalElistID.sort()
-#     else:
-#         _locationDic = {}
-#         _a,_b,_c = _location2Index[order]
-#         for elmID in finalElistID:
-#             _elmLOC = elemByID(elmID).CENTER
-#             _locationDic[elmID] = (_elmLOC[_a],_elmLOC[_b],_elmLOC[_c])
-#         finalElistID = [k for k, v in sorted(_locationDic.items(), key=lambda item: item[1])]
+    if order == None:
+        pass
+    elif order == 'ID':
+        finalElistID.sort()
+    else:
+        _locationDic = {}
+        _a,_b,_c = _location2Index[order]
+        for elmID in finalElistID:
+            _elmLOC = elemByID(elmID).CENTER
+            _locationDic[elmID] = (_elmLOC[_a],_elmLOC[_b],_elmLOC[_c])
+        finalElistID = [k for k, v in sorted(_locationDic.items(), key=lambda item: item[1])]
 
-#     if reverse: finalElistID = list(reversed(finalElistID))
+    if reverse: finalElistID = list(reversed(finalElistID))
 
-#     if output == 'ELEM':
-#         finalElistElem = [elemByID(elmID) for elmID in finalElistID]
-#         return finalElistElem
+    if output == 'ELEM':
+        finalElistElem = [elemByID(elmID) for elmID in finalElistID]
+        return finalElistElem
     
-#     return finalElistID
+    return finalElistID
