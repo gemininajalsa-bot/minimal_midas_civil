@@ -1288,7 +1288,7 @@ def elemByID(elemID:int) -> _helperELEM:
     try:
         return (Element.__elemDIC__[str(elemID)])
     except:
-        print(Fore.RED +f'There is no element with ID {elemID}'+Style.RESET_ALL)
+        print(f'There is no element with ID {elemID}')
         return None
     
 def elemsInGroup(groupName:str,unique:bool=True,reverse:bool=False,output:Literal['ID','ELEM']='ID',order:_order=None) -> list[_helperELEM]:
