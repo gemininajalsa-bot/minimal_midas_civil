@@ -15,7 +15,6 @@ from._Tap_CompPSC import _SS_TAP_COMP_PSC_I
 # from ._sectpropLIb import _SS_SECTPROP
 
 from ._genSec import _SS_GENERAL
-from .._utils import utils
 
 from .._mapi import MidasAPI
 from typing import Literal,TypeVar
